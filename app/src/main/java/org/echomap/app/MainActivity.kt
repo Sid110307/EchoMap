@@ -79,8 +79,10 @@ class MainActivity : Activity(), SensorEventListener {
             recorder=AudioRecord(MediaRecorder.AudioSource.UNPROCESSED,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,max(minBuffer,n*2))
             if(recorder.state!=AudioRecord.STATE_INITIALIZED){recorder.release();recorder=AudioRecord(MediaRecorder.AudioSource.MIC,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,max(minBuffer,n*2))}
             player=AudioTrack(AudioManager.STREAM_MUSIC,rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_16BIT,n*2,AudioTrack.MODE_STATIC)
-            if(recorder.state!=AudioRecord.STATE_INITIALIZED || player.state!=AudioTrack.STATE_INITIALIZED) throw IllegalStateException("Audio initialization failed")
-            player.write(chirp,0,n)
+            if(recorder.state!=AudioRecord.STATE_INITIALIZED) throw IllegalStateException("Microphone initialization failed")
+            // Static tracks become initialized only after their audio data is loaded.
+            val written=player.write(chirp,0,n)
+            if(written!=n || player.state!=AudioTrack.STATE_INITIALIZED) throw IllegalStateException("Speaker initialization failed (write=$written)")
             while(running){
                 val capture=ShortArray(n)
                 recorder.startRecording()
