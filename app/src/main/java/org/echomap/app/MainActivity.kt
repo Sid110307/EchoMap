@@ -20,10 +20,10 @@ class MainActivity : Activity(), SensorEventListener {
     private lateinit var plot: ScanView
     private lateinit var status: TextView
     private val hits = mutableListOf<Hit>()
-    private var running = false
+    @Volatile private var running = false
     private var worker: Thread? = null
-    private var heading = 0f
-    private var tilt = 0f
+    @Volatile private var heading = 0f
+    @Volatile private var tilt = 0f
     private var rotation = FloatArray(9)
     private val orientation = FloatArray(3)
     private var sm: SensorManager? = null
@@ -45,7 +45,6 @@ class MainActivity : Activity(), SensorEventListener {
         root.addView(TextView(this).apply { text="Echo ranges are approximate. The visualization is a directional point cloud, not verified walls or furniture. Headphones and Bluetooth audio are unsupported."; textSize=11f; setTextColor(Color.LTGRAY) })
         setContentView(root)
         sm = getSystemService(SENSOR_SERVICE) as SensorManager
-        sm?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)?.let { sm?.registerListener(this,it,SensorManager.SENSOR_DELAY_GAME) }
         if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 101)
     }
     override fun onSensorChanged(event: SensorEvent) {
@@ -57,12 +56,13 @@ class MainActivity : Activity(), SensorEventListener {
     }
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
     private fun begin(){
+        if(worker?.isAlive==true){status.text="Previous scan is stopping. Tap START again shortly.";return}
         if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO),101);return}
         running=true
         status.text="Scanning... keep phone speaker unobstructed; turn slowly."
         worker=Thread { scanLoop() }.also { it.start() }
     }
-    private fun stop(){running=false; status.text="Stopped • ${hits.size} echo candidates"}
+    private fun stop(){running=false; val count=synchronized(hits){hits.size}; status.text="Stopped • $count echo candidates"}
     private fun scanLoop(){
         val rate=48000; val n=8192; val chirpN=1200
         val chirp=ShortArray(n)
@@ -76,8 +76,13 @@ class MainActivity : Activity(), SensorEventListener {
         if(minBuffer<=0){runOnUiThread{status.text="48 kHz microphone not supported"};running=false;return}
         var recorder: AudioRecord?=null; var player: AudioTrack?=null
         try {
-            recorder=AudioRecord(MediaRecorder.AudioSource.UNPROCESSED,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,max(minBuffer,n*2))
-            if(recorder.state!=AudioRecord.STATE_INITIALIZED){recorder.release();recorder=AudioRecord(MediaRecorder.AudioSource.MIC,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,max(minBuffer,n*2))}
+            val rawRecorder=try {
+                AudioRecord(MediaRecorder.AudioSource.UNPROCESSED,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,max(minBuffer,n*2))
+            }catch(_:IllegalArgumentException){null}
+            recorder=if(rawRecorder?.state==AudioRecord.STATE_INITIALIZED) rawRecorder else {
+                rawRecorder?.release()
+                AudioRecord(MediaRecorder.AudioSource.MIC,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,max(minBuffer,n*2))
+            }
             player=AudioTrack(AudioManager.STREAM_MUSIC,rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_16BIT,n*2,AudioTrack.MODE_STATIC)
             if(recorder.state!=AudioRecord.STATE_INITIALIZED) throw IllegalStateException("Microphone initialization failed")
             // Static tracks become initialized only after their audio data is loaded.
@@ -86,23 +91,31 @@ class MainActivity : Activity(), SensorEventListener {
             while(running){
                 val capture=ShortArray(n)
                 recorder.startRecording()
-                player.stop(); player.reloadStaticData(); player.play()
+                if(recorder.recordingState!=AudioRecord.RECORDSTATE_RECORDING) throw IllegalStateException("Microphone did not start")
+                player.stop()
+                if(player.reloadStaticData()!=AudioTrack.SUCCESS) throw IllegalStateException("Could not reload speaker audio")
+                player.play()
                 var got=0
-                while(got<n && running){val count=recorder.read(capture,got,n-got);if(count<=0)break;got+=count}
+                while(got<n && running){
+                    val count=recorder.read(capture,got,n-got)
+                    if(count<=0) throw IllegalStateException("Microphone read failed ($count)")
+                    got+=count
+                }
                 recorder.stop(); player.pause()
-                if(got==n){
+                if(got==n && running){
                     val candidate=estimate(capture,chirp,rate,chirpN)
                     if(candidate!=null){
                         val (distance,quality)=candidate
                         val az=heading; val el=-tilt
                         val hit=Hit((distance*cos(el)*sin(az)).toFloat(),(distance*cos(el)*cos(az)).toFloat(),(distance*sin(el)).toFloat(),quality)
                         synchronized(hits){hits.add(hit);if(hits.size>2500)hits.removeAt(0)}
-                        runOnUiThread { plot.invalidate();status.text=String.format(Locale.US,"Scanning • %d candidates • last %.2f m • relative echo strength %.2f",hits.size,distance,quality) }
+                        val count=synchronized(hits){hits.size}
+                        runOnUiThread { if(running){plot.invalidate();status.text=String.format(Locale.US,"Scanning • %d candidates • last %.2f m • relative echo strength %.2f",count,distance,quality)} }
                     }
                 }
                 Thread.sleep(130)
             }
-        }catch(e:Exception){runOnUiThread{status.text="Audio error: ${e.message}"}}
+        }catch(e:Exception){if(running) runOnUiThread{if(!isDestroyed) status.text="Audio error: ${e.message}"}}
         finally{running=false;try{recorder?.stop()}catch(_:Exception){};try{player?.stop()}catch(_:Exception){};recorder?.release();player?.release()}
     }
     private fun estimate(signal:ShortArray,chirp:ShortArray,rate:Int,chirpN:Int):Pair<Double,Float>?{
@@ -121,7 +134,7 @@ class MainActivity : Activity(), SensorEventListener {
         val direct=(0 until directEnd).maxByOrNull{scores[it]}?:return null
         val directScore=scores[direct]
         if(directScore<1e7)return null
-        val start=direct+(0.55*2/343.0*rate/step).toInt()
+        val start=direct+ceil(0.55*2/343.0*rate/step).toInt()
         val end=min(scores.size,direct+(5.0*2/343.0*rate/step).toInt())
         if(start>=end)return null
         val peak=(start until end).maxByOrNull{scores[it]}?:return null
@@ -131,11 +144,27 @@ class MainActivity : Activity(), SensorEventListener {
         return distance to quality.coerceAtMost(1f)
     }
     private fun exportCsv(){
-        val file=File(getExternalFilesDir(null),"echomap_${System.currentTimeMillis()}.csv")
-        synchronized(hits){file.printWriter().use{out->out.println("x_m,y_m,z_m,relative_echo_strength");hits.forEach{out.println("${it.x},${it.y},${it.z},${it.strength}")}}}
-        status.text="Saved: ${file.absolutePath}"
+        try {
+            val directory=getExternalFilesDir(null) ?: throw java.io.IOException("Storage unavailable")
+            val file=File(directory,"echomap_${System.currentTimeMillis()}.csv")
+            val snapshot=synchronized(hits){hits.toList()}
+            file.bufferedWriter().use{out->
+                out.write("x_m,y_m,z_m,relative_echo_strength");out.newLine()
+                snapshot.forEach{out.write("${it.x},${it.y},${it.z},${it.strength}");out.newLine()}
+            }
+            status.text="Saved: ${file.absolutePath}"
+        }catch(e:Exception){status.text="Export failed: ${e.message}"}
     }
-    override fun onDestroy(){stop();sm?.unregisterListener(this);super.onDestroy()}
+    override fun onResume(){
+        super.onResume()
+        sm?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)?.let { sm?.registerListener(this,it,SensorManager.SENSOR_DELAY_GAME) }
+    }
+    override fun onPause(){
+        if(running) stop()
+        sm?.unregisterListener(this)
+        super.onPause()
+    }
+    override fun onDestroy(){running=false;sm?.unregisterListener(this);super.onDestroy()}
     inner class ScanView:View(this){
         private val paint=Paint(3)
         override fun onDraw(c:Canvas){
