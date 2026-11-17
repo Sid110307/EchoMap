@@ -17,10 +17,11 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools platforms;android-35 build-tools;35.0.0"
-      - name: Build debug APK
-        run: |
-          gradle wrapper --gradle-version 8.9
-          ./gradlew assembleDebug --no-daemon
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Check and build
+        run: gradle lintDebug assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: EchoMap3D-debug-apk
@@ -35,3 +36,4 @@ jobs:
             --title "EchoMap build ${GITHUB_RUN_NUMBER}" \
             --notes "Automatically built debug APK." \
             --latest
+
