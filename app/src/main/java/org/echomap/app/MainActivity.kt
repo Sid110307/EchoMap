@@ -2,20 +2,24 @@ package org.echomap.app
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.pm.PackageManager
-import android.graphics.*
 import android.hardware.*
 import android.media.*
 import android.os.*
 import android.view.*
 import android.widget.*
 import java.io.File
-import java.util.Locale
-import kotlin.math.*
+import kotlin.math.max
+import kotlin.math.min
 
 class MainActivity : Activity(), SensorEventListener {
     private lateinit var plot: ScanView
     private lateinit var status: TextView
+    private lateinit var scanButton: Button
+    private lateinit var clearButton: Button
+    private lateinit var exportButton: Button
+    private lateinit var pointCount: TextView
     private val hits = mutableListOf<Hit>()
     @Volatile private var running = false
     private var worker: Thread? = null
@@ -33,31 +37,39 @@ class MainActivity : Activity(), SensorEventListener {
         savedInstanceState?.getFloatArray("map")?.let { saved ->
             for (i in 0 until saved.size - 3 step 4) hits.add(Hit(saved[i], saved[i + 1], saved[i + 2], saved[i + 3]))
         }
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(11,19,31)); setPadding(14,18,14,12) }
+        setContentView(R.layout.activity_main)
+        val root = findViewById<View>(R.id.root)
+        val padding = (20 * resources.displayMetrics.density).toInt()
         root.setOnApplyWindowInsetsListener { view, insets ->
             if (Build.VERSION.SDK_INT >= 30) {
                 val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                view.setPadding(14 + bars.left, 18 + bars.top, 14 + bars.right, 12 + bars.bottom)
+                view.setPadding(padding + bars.left, padding + bars.top, padding + bars.right, padding + bars.bottom)
             } else {
                 @Suppress("DEPRECATION")
-                view.setPadding(14 + insets.systemWindowInsetLeft, 18 + insets.systemWindowInsetTop,
-                    14 + insets.systemWindowInsetRight, 12 + insets.systemWindowInsetBottom)
+                view.setPadding(padding + insets.systemWindowInsetLeft, padding + insets.systemWindowInsetTop,
+                    padding + insets.systemWindowInsetRight, padding + insets.systemWindowInsetBottom)
             }
             insets
         }
-        val title = TextView(this).apply { text="ECHOMAP 3D  •  CAMERA-FREE"; textSize=19f; setTextColor(Color.CYAN); setPadding(4,0,0,8) }
-        status = TextView(this).apply { text="Experimental acoustic echo map. Point the top edge of the screen toward a surface; stay in one spot and rotate slowly."; textSize=13f; setTextColor(Color.WHITE); setPadding(4,0,0,12) }
-        plot = ScanView()
-        root.addView(title); root.addView(status)
-        root.addView(plot, LinearLayout.LayoutParams(-1,0,1f))
-        val buttons = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
-        fun button(label:String, click:()->Unit) = Button(this).apply { text=label; setOnClickListener { click() }; buttons.addView(this,LinearLayout.LayoutParams(0,-2,1f)) }
-        button("START / STOP") { if(running) stop() else begin() }
-        button("CLEAR") { synchronized(hits){hits.clear();mapEpoch++}; plot.invalidate(); status.text="Map cleared" }
-        button("EXPORT CSV") { exportCsv() }
-        root.addView(buttons)
-        root.addView(TextView(this).apply { text="Echo ranges are approximate. The visualization is a directional point cloud, not verified walls or furniture. The audible chirp uses the built-in speaker and microphone. Start at moderate media volume. Stay in one spot."; textSize=11f; setTextColor(Color.LTGRAY) })
-        setContentView(root)
+        plot = findViewById(R.id.map)
+        status = findViewById(R.id.status)
+        pointCount = findViewById(R.id.point_count)
+        scanButton = findViewById<Button>(R.id.scan).apply {
+            setOnClickListener { if (running) stop() else begin() }
+        }
+        clearButton = findViewById<Button>(R.id.clear).apply {
+            setOnClickListener {
+                synchronized(hits) { hits.clear(); mapEpoch++ }
+                refreshMap()
+                status.setText(R.string.cleared)
+            }
+        }
+        exportButton = findViewById<Button>(R.id.export).apply { setOnClickListener { exportCsv() } }
+        findViewById<Button>(R.id.help).setOnClickListener {
+            AlertDialog.Builder(this).setTitle(R.string.help_title).setMessage(R.string.help_body)
+                .setPositiveButton(R.string.done, null).show()
+        }
+        refreshMap()
         sm = getSystemService(SENSOR_SERVICE) as SensorManager
         orientationSensor = sm?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
             ?: sm?.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
@@ -85,13 +97,13 @@ class MainActivity : Activity(), SensorEventListener {
                 if (pendingStart && resumed && direction != null) { pendingStart = false; begin() }
             } else {
                 pendingStart = false
-                status.text = "Microphone permission is required. Allow it in app settings, then tap START."
+                status.text = "Microphone permission is required. Allow it in app settings, then tap Start scan."
             }
         }
     }
 
     private fun begin() {
-        if (worker?.isAlive == true) { status.text = "Previous scan is stopping. Tap START again shortly."; return }
+        if (worker?.isAlive == true) { status.text = "Previous scan is stopping. Tap Start scan again shortly."; return }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             pendingStart = true
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 101)
@@ -103,9 +115,9 @@ class MainActivity : Activity(), SensorEventListener {
             return
         }
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
-        if (audio.isMicrophoneMute) { status.text = "Microphone is muted. Unmute it, then tap START."; return }
+        if (audio.isMicrophoneMute) { status.text = "Microphone is muted. Unmute it, then tap Start scan."; return }
         if (audio.getStreamVolume(AudioManager.STREAM_MUSIC) == 0) {
-            status.text = "Media volume is muted. Raise it to a moderate level, then tap START."
+            status.text = "Media volume is muted. Raise it to a moderate level, then tap Start scan."
             return
         }
         val id = ++scanId
@@ -115,16 +127,17 @@ class MainActivity : Activity(), SensorEventListener {
             .setOnAudioFocusChangeListener({ change ->
                 if (change < 0 && scanId == id && running) {
                     stop()
-                    status.text = "Scan stopped because another app needs audio. Tap START to resume."
+                    status.text = "Scan stopped because another app needs audio. Tap Start scan to resume."
                 }
             }, Handler(Looper.getMainLooper())).build()
         if (audio.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            status.text = "Audio is busy. Close other audio apps and tap START."
+            status.text = "Audio is busy. Close other audio apps and tap Start scan."
             return
         }
         running = true
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        status.text = "Scanning with audible chirps. Keep still and leave speaker/mic unobstructed."
+        refreshScanButton()
+        status.setText(R.string.scanning)
         worker = Thread({ scanLoop(id, audio, focus) }, "EchoMap scan").also { it.start() }
     }
 
@@ -133,14 +146,14 @@ class MainActivity : Activity(), SensorEventListener {
         scanId++ // Invalidate queued results/errors from the old scan.
         worker?.interrupt()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val count = synchronized(hits) { hits.size }
-        status.text = "Stopped • $count echo candidates"
+        refreshScanButton()
+        status.setText(R.string.stopped)
     }
 
     private fun scanStatus(id: Int, message: String) {
         runOnUiThread {
             if (scanId == id && !isDestroyed) {
-                plot.invalidate()
+                refreshMap()
                 status.text = message
             }
         }
@@ -225,15 +238,13 @@ class MainActivity : Activity(), SensorEventListener {
                 if (!running) break
                 val message = when (detection) {
                     is EchoDetector.Echo -> {
-                        val count = synchronized(hits) {
+                        synchronized(hits) {
                             if (epoch == mapEpoch && running && scanId == id) {
                                 hits.add(aim.hit(detection.distance, detection.strength))
                                 if (hits.size > 2500) hits.removeAt(0)
                             }
-                            hits.size
                         }
-                        String.format(Locale.US, "Scanning • %d candidates • last %.2f m • relative echo strength %.2f",
-                            count, detection.distance, detection.strength)
+                        getString(R.string.last_echo, detection.distance)
                     }
                     EchoDetector.Rejection.NO_PULSE -> "No chirp detected. Check media volume and uncover speaker/mic."
                     EchoDetector.Rejection.NO_ECHO -> "Chirp detected, no clear echo at 0.55–5 m. Aim at a nearby hard surface."
@@ -256,7 +267,10 @@ class MainActivity : Activity(), SensorEventListener {
             runCatching { player?.release() }
             audio.abandonAudioFocusRequest(focus)
             runOnUiThread {
-                if (scanId == id) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                if (scanId == id) {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    refreshScanButton()
+                }
             }
         }
     }
@@ -304,25 +318,17 @@ class MainActivity : Activity(), SensorEventListener {
         outState.putFloatArray("map", saved)
         super.onSaveInstanceState(outState)
     }
-    inner class ScanView:View(this){
-        private val paint=Paint(3)
-        override fun onDraw(c:Canvas){
-            super.onDraw(c);c.drawColor(Color.rgb(15,27,43))
-            val w=width.toFloat();val h=height.toFloat();val scale=min(w,h)/12f
-            paint.strokeWidth=1f;paint.color=Color.rgb(48,69,87)
-            for(i in -5..5){val x=w/2+i*scale;c.drawLine(x,0f,x,h,paint);val y=h/2+i*scale;c.drawLine(0f,y,w,y,paint)}
-            paint.color=Color.WHITE;c.drawCircle(w/2,h/2,7f,paint)
-            val snapshot = synchronized(hits) { hits.toList() }
-            snapshot.forEach{hit->
-                // Oblique projection exposes approximate height; no translation tracking.
-                val px=w/2+hit.x*scale+hit.y*scale*.20f
-                val py=h/2-hit.y*scale*.65f-hit.z*scale
-                paint.color=Color.rgb((55+hit.strength*180).toInt().coerceIn(0,255),220,195)
-                c.drawCircle(px,py,3.2f,paint)
-            }
-            paint.color=Color.LTGRAY;paint.textSize=28f;c.drawText("Echo candidates: ${snapshot.size}",16f,38f,paint)
-            paint.textSize=23f;c.drawText("Approx. range 0.55–5 m",16f,70f,paint)
+    private fun refreshMap() {
+        val snapshot = synchronized(hits) { hits.toList() }
+        plot.points = snapshot
+        pointCount.text = resources.getQuantityString(R.plurals.measurements, snapshot.size, snapshot.size)
+        for (button in listOf(clearButton, exportButton)) {
+            button.isEnabled = snapshot.isNotEmpty()
+            button.alpha = if (button.isEnabled) 1f else 0.4f
         }
     }
-}
 
+    private fun refreshScanButton() {
+        scanButton.setText(if (running) R.string.stop_scan else R.string.start_scan)
+    }
+}

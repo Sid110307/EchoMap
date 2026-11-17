@@ -1,0 +1,29 @@
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:fillViewport="true">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical">
+        <TextView android:id="@+id/status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:minLines="2"
+            android:text="@string/ready" android:textSize="16sp" android:lineSpacingExtra="3dp"
+            android:accessibilityLiveRegion="polite" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" android:layout_marginBottom="12dp"
+            android:text="@string/scan_hint" android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+        <Button android:id="@+id/scan" style="@style/PlainButton"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:minHeight="56dp" android:backgroundTint="@color/accent"
+            android:background="@android:drawable/btn_default" android:textColor="@color/surface"
+            android:text="@string/start_scan" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginTop="4dp">
+            <Button android:id="@+id/clear" style="@style/PlainButton"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="@string/clear_map" />
+            <Button android:id="@+id/export" style="@style/PlainButton"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:text="@string/save_csv" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

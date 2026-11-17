@@ -1,0 +1,20 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical"
+        android:paddingBottom="8dp">
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="@string/map_title" android:textSize="16sp"
+            android:fontFamily="sans-serif-medium" android:accessibilityHeading="true" />
+        <TextView android:id="@+id/point_count" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+    </LinearLayout>
+    <org.echomap.app.ScanView android:id="@+id/map" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1"
+        android:background="@drawable/map_border" android:contentDescription="@string/map_description" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingTop="8dp" android:paddingBottom="12dp" android:text="@string/map_scale"
+        android:textSize="13sp" android:textColor="@color/text_secondary" />
+</LinearLayout>

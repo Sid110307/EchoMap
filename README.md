@@ -3,18 +3,19 @@
 > Acoustic echo mapping prototype for Android.
 
 EchoMap plays an **audible 4–12 kHz chirp**, listens for a delayed reflection,
-and plots approximate range along the top edge of the screen. It needs Android
+and plots approximate range along the top edge of the screen. The interface uses
+a plain light theme and a top-down map with a one-metre grid. It needs Android
 8 or later, a built-in speaker/microphone supporting 48 kHz audio, and a rotation
 vector sensor (game rotation vector is supported as a fallback).
 
 ### Scanning
 
 1. Disconnect headphones and Bluetooth audio. Set media volume to a moderate level.
-2. Tap START and allow microphone access. Keep both the speaker and mic uncovered.
+2. Tap **Start scan** and allow microphone access. Keep both the speaker and mic uncovered.
 3. Stay in one spot. Point the **top edge of the screen** at a hard surface
    roughly 0.55–5 m away, then rotate slowly. Keep the phone fairly flat for a
    horizontal sweep; tilting its top edge upward plots higher candidates.
-4. Stop before moving to another position. CLEAR starts a new map. The app does
+4. Stop before moving to another position. **Clear map** starts a new map. The app does
    not track translation, so walking around combines incompatible measurements.
 
 The status distinguishes an undetected chirp, an undetected reflection,
@@ -27,7 +28,10 @@ Distances use 343 m/s and do not compensate for speaker/mic separation. The
 game rotation sensor uses a relative heading that can drift; clear the map
 after suspending or repositioning the phone.
 
-EXPORT CSV saves x/y/z in metres and relative echo strength to the app's external
+**Help** contains the scanning instructions. The map shows horizontal positions;
+height remains in the exported data. In landscape, controls sit beside the map.
+
+**Save CSV** saves x/y/z in metres and relative echo strength to the app's external
 files directory. Its full path is shown after export. For a debug installation,
 retrieve files with `adb pull /sdcard/Android/data/org.echomap.app/files/`.
 

@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">EchoMap</string>
+    <string name="help">Help</string>
+    <string name="map_title">Echo map</string>
+    <string name="map_scale">Top view · 1 m grid</string>
+    <string name="start_scan">Start scan</string>
+    <string name="stop_scan">Stop scan</string>
+    <string name="clear_map">Clear map</string>
+    <string name="save_csv">Save CSV</string>
+    <string name="ready">Point the top edge of your phone at a wall, then start a scan.</string>
+    <string name="scan_hint">Stay in one place and turn slowly.</string>
+    <string name="map_description">Top view of approximate echoes around your phone. Each grid square is one metre.</string>
+    <string name="empty_map">No measurements yet</string>
+    <string name="empty_map_hint">Start a scan to add points.</string>
+    <string name="phone">Phone</string>
+    <string name="north">N</string>
+    <string name="east">E</string>
+    <plurals name="measurements">
+        <item quantity="one">%d point</item>
+        <item quantity="other">%d points</item>
+    </plurals>
+    <string name="help_title">How to scan</string>
+    <string name="help_body">1. Disconnect headphones and Bluetooth audio. Set media volume to a moderate level.\n\n2. Point the top edge of the screen toward a hard surface, about 0.55–5 m away. Leave the speaker and microphone uncovered.\n\n3. Stay in one spot and rotate slowly. Stop and clear the map before moving to another spot.\n\nThe map shows approximate echo candidates from above. It does not identify walls or furniture. Height is included in CSV exports.\n\nSave CSV writes to the app’s files folder; the saved path appears below the map.</string>
+    <string name="done">Done</string>
+    <string name="cleared">Map cleared.</string>
+    <string name="scanning">Listening for echoes…</string>
+    <string name="stopped">Scan stopped.</string>
+    <string name="last_echo">Last echo: %1$.2f m away.</string>
+</resources>
